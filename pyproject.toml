@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "statementbridge"
+version = "0.1.0"
+description = "Indian bank statement PDFs to Tally-ready Excel and XML, offline."
+requires-python = ">=3.11"
+dependencies = [
+    "pdfplumber>=0.11",
+    "pillow>=10.0",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "pandas>=2.1",
+    "pytesseract>=0.3.10",
+    "rapidfuzz>=3.6",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+paddle = ["paddleocr>=2.7", "paddlepaddle>=2.6"]
+
+[project.scripts]
+statementbridge = "statementbridge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "fixtures: requires the sample PDFs from the Ba-resources repo",
+    "slow: full-document OCR runs",
+]
