@@ -9,7 +9,7 @@ from typing import Callable, Sequence
 import cv2
 
 from ..ingest import preprocess, render
-from ..ocr import columns
+from ..ocr import columns, table
 from ..ocr.engine import OcrEngine, OcrLine
 from ..ocr.tesseract import TesseractEngine
 from .frame import Anchor, ParseResult, Txn
@@ -38,7 +38,6 @@ def parse_pdf(
     images = render.render(pdf, dpi=dpi, first=first, last=last)
     result = ParseResult(page_count=len(images))
 
-    dot_matrix = profile.is_overdraft  # the Gramin ledger; SBI is a ruled table
     source_row = 0
 
     for position, page in enumerate(images, start=1):
@@ -47,10 +46,7 @@ def parse_pdf(
         image = cv2.imread(str(page.path), cv2.IMREAD_GRAYSCALE)
         if image is None:
             continue
-        prepared = preprocess.prepare(
-            image, dot_matrix=dot_matrix, strip_rules=not dot_matrix
-        )
-        lines = list(engine.read_lines(prepared))
+        prepared, lines = _read_image(image, profile, engine)
         # Second pass over the money columns alone, digits only. Never removes
         # a reading, only sharpens one.
         band = columns.locate_band(lines, prepared.shape[1])
@@ -65,6 +61,24 @@ def parse_pdf(
         source_row += len(lines)
 
     return result
+
+
+def _read_image(image, profile: BankProfile, engine: OcrEngine):
+    """Condition one page and assemble its rows, per the profile's scan class."""
+    if not profile.ruled_table:
+        prepared = preprocess.prepare(image, dot_matrix=True)
+        return prepared, list(engine.read_lines(prepared))
+
+    # The grid has to be found before the rules are stripped, since the rules
+    # are what defines it. Words are then read from the de-ruled image, because
+    # Tesseract renders a printed rule as a run of pipe characters.
+    binary = preprocess.sauvola(preprocess.deskew(preprocess.to_grey(image)))
+    grid = table.detect_grid(binary)
+    deruled = preprocess.remove_rules(binary)
+    words = engine.read_words(deruled)
+    if grid.usable and words:
+        return deruled, table.rows_to_lines(words, grid)
+    return deruled, list(engine.read_lines(deruled))
 
 
 def _read_page(

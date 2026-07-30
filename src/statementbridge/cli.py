@@ -91,6 +91,28 @@ def cmd_parse(args: argparse.Namespace) -> int:
     return 0 if chain.reconciled else 1
 
 
+def cmd_bakeoff(args: argparse.Namespace) -> int:
+    from .audit import bakeoff
+
+    profile = get_profile(args.profile)
+    pages = list(range(args.first or 1, (args.last or args.first or 1) + 1))
+    print(f"OCR comparison — {Path(args.pdf).name}, pages {pages[0]}-{pages[-1]}")
+    for score in bakeoff.run(Path(args.pdf), profile, pages=pages, dpi=args.dpi):
+        print(score.line())
+    return 0
+
+
+def cmd_classify(args: argparse.Namespace) -> int:
+    from .ingest.classify import classify
+
+    result = classify(Path(args.pdf))
+    print(f"{Path(args.pdf).name}: {result.dominant.value}")
+    print(f"  pages          {len(result.pages)}")
+    print(f"  median chars   {result.median_chars:.0f}")
+    print(f"  mixed content  {'yes' if result.mixed else 'no'}")
+    return 0
+
+
 def cmd_profiles(_: argparse.Namespace) -> int:
     for profile in all_profiles():
         kind = "cash-credit/OD" if profile.is_overdraft else "regular"
@@ -128,6 +150,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(parse_cmd)
     parse_cmd.add_argument("--out", default=None, help="write CSV here")
     parse_cmd.set_defaults(func=cmd_parse)
+
+    bakeoff_cmd = subparsers.add_parser(
+        "ocr-bakeoff", help="compare OCR engines on real pages"
+    )
+    add_common(bakeoff_cmd)
+    bakeoff_cmd.set_defaults(func=cmd_bakeoff)
+
+    classify_cmd = subparsers.add_parser(
+        "classify", help="report whether a PDF has a text layer"
+    )
+    classify_cmd.add_argument("pdf")
+    classify_cmd.set_defaults(func=cmd_classify)
 
     profiles_cmd = subparsers.add_parser("profiles", help="list known bank profiles")
     profiles_cmd.set_defaults(func=cmd_profiles)

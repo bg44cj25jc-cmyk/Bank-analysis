@@ -18,6 +18,11 @@ class BankProfile:
     key: str
     name: str
 
+    #: True when the statement is a ruled table whose rows may span several
+    #: printed lines. Such a page is read by row band rather than by text line;
+    #: see ocr/table.py. False means a dot-matrix ledger, one line per row.
+    ruled_table: bool = False
+
     #: True for cash-credit and overdraft accounts, where the printed balance is
     #: a debit figure that grows on debit. Only used to seed the opening sign:
     #: every subsequent direction comes from the balance delta, so a wrong guess

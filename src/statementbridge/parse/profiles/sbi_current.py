@@ -14,6 +14,7 @@ SBI_CURRENT = register(
     BankProfile(
         key="sbi_current",
         name="State Bank of India — Current account",
+        ruled_table=True,
         is_overdraft=False,
         extra_patterns=(
             (RowKind.HEADER_REPEAT, "state bank of india", "HEADER"),

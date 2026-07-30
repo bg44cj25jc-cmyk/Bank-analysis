@@ -30,11 +30,12 @@ class TesseractEngine:
             parts.append(f"-c tessedit_char_whitelist={whitelist}")
         return " ".join(parts)
 
-    def read_lines(self, image: np.ndarray) -> Sequence[OcrLine]:
+    def read_words(self, image: np.ndarray, *, whitelist: str | None = None) -> list[Word]:
+        """Recognise a page and return every word with its geometry."""
         data = pytesseract.image_to_data(
             image,
             lang=self.lang,
-            config=self._config(None),
+            config=self._config(whitelist),
             output_type=pytesseract.Output.DATAFRAME,
         )
         if not isinstance(data, pd.DataFrame) or data.empty:
@@ -45,10 +46,7 @@ class TesseractEngine:
         data = data[data["text"].str.strip() != ""]
         if data.empty:
             return []
-
-        # Deliberately ignore Tesseract's own line_num grouping and rebuild the
-        # rows from word geometry -- see ocr/lines.py for why.
-        words = [
+        return [
             Word(
                 text=str(record.text),
                 left=int(record.left),
@@ -59,6 +57,14 @@ class TesseractEngine:
             )
             for record in data.itertuples()
         ]
+
+    def read_lines(self, image: np.ndarray) -> Sequence[OcrLine]:
+        words = self.read_words(image)
+        if not words:
+            return []
+
+        # Deliberately ignore Tesseract's own line_num grouping and rebuild the
+        # rows from word geometry -- see ocr/lines.py for why.
         return group_into_rows(words)
 
     def read_region(self, image: np.ndarray, *, whitelist: str | None = None) -> str:
