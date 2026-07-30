@@ -92,6 +92,13 @@ class Txn:
     #: Set when the amount column carried its own Dr/Cr marker.
     printed_marker: str | None = None
 
+    #: Pixel bounds (left, top, right, bottom) of the line this row came from,
+    #: in the coordinate space of the rendered page. The review screen zooms
+    #: the source image to this box so a reviewer can check a figure against
+    #: the scan without hunting for it. None for digital-text pages, where the
+    #: question does not arise.
+    bbox: tuple[int, int, int, int] | None = None
+
     def __post_init__(self) -> None:
         self.debit = q2(self.debit)
         self.credit = q2(self.credit)

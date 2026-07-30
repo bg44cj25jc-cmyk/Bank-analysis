@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Indian bank statement PDFs to Tally-ready Excel and XML, offline."
 requires-python = ">=3.11"
 dependencies = [
+    "PySide6>=6.6",
     "pdfplumber>=0.11",
     "pillow>=10.0",
     "numpy>=1.26",

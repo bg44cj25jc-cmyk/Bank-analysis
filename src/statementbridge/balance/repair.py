@@ -47,10 +47,19 @@ _SEPARATOR_FACTORS: tuple[Decimal, ...] = (
 class Diagnosis:
     index: int
     kind: str          # AMOUNT_CORRUPT | BALANCE_CORRUPT | AMOUNT_MISSING |
-                       # BALANCE_MISSING | MISSING_ROW | AMBIGUOUS
+                       # BALANCE_MISSING | MISSING_ROW | AMBIGUOUS |
+                       # UPSTREAM_BREAK
     detail: str
     applied: bool
     page_no: int = 0
+
+    #: What the scan appeared to say, and what the balance chain requires
+    #: instead. Held as values rather than only inside ``detail`` so the review
+    #: screen can put them side by side -- "read 8,760.00, implies 8,750.00" is
+    #: the whole story of a row, and a reviewer should not have to parse it out
+    #: of a sentence. Either may be None when the field was wholly illegible.
+    read_value: Decimal | None = None
+    implied_value: Decimal | None = None
 
 
 def _digits(value: Decimal) -> str:
@@ -209,6 +218,7 @@ def _repair_amount(
         return Diagnosis(
             index, "AMOUNT_CORRUPT",
             f"amount {amount} -> {candidate} from balance delta", True, row.page_no,
+            read_value=amount, implied_value=candidate,
         )
     # The delta is nothing like the printed amount. The likeliest structural
     # explanation is that OCR lost a row here. We report where, and how much is
@@ -229,6 +239,7 @@ def _repair_amount(
             f"balance moves {delta} but this row shows {amount}; "
             f"a transaction of {gap} appears to be missing before this row",
             False, row.page_no,
+            read_value=amount, implied_value=q2(abs(delta)),
         )
     return Diagnosis(index, "AMBIGUOUS", "amount and delta irreconcilable", False, row.page_no)
 
@@ -276,6 +287,7 @@ def _repair_balance(chain: _Chain, index: int) -> Diagnosis:
         index, "BALANCE_CORRUPT",
         f"balance {observed} -> {chosen}, confirmed by the following row",
         True, row.page_no,
+        read_value=observed, implied_value=chosen,
     )
 
 
@@ -292,13 +304,15 @@ def _repair_last(
             row.printed_amount = q2(abs(delta))
             return Diagnosis(index, "AMOUNT_CORRUPT",
                              f"amount {amount} -> {abs(delta)}; balance matches printed closing",
-                             True, row.page_no)
+                             True, row.page_no,
+                             read_value=amount, implied_value=q2(abs(delta)))
         for sign in (Decimal(1), Decimal(-1)):
             if q2(previous_balance + sign * abs(amount)) == closing:
                 row.balance = closing
                 return Diagnosis(index, "BALANCE_CORRUPT",
                                  f"balance {balance} -> {closing} from printed closing",
-                                 True, row.page_no)
+                                 True, row.page_no,
+                                 read_value=balance, implied_value=closing)
     return Diagnosis(index, "AMBIGUOUS",
                      "final row disagrees and no printed closing resolves it",
                      False, row.page_no)

@@ -20,7 +20,21 @@ a software defect — see [Why the fixtures do not reconcile](#why-the-fixtures-
 | OCR pipeline (dot-matrix and ruled-table) | done |
 | Digital-text parser (pdfplumber) | done, synthetic tests only |
 | Bank profiles, audit and CLI | done |
-| Rules engine, Excel, GUI, Tally XML, Ollama | not started (Phases 2–7) |
+| **PySide6 GUI** (Queue, Review, Reconcile, audit trail) | **done** (Phase 4, taken early) |
+| Export / Accuracy screens | shells — the writers are Phases 3 and 5 |
+| Rules engine, Excel, Tally XML, Ollama | not started |
+
+The GUI was brought forward ahead of the rules engine deliberately. Its Review
+and Reconcile screens are what make a statement that does not reconcile
+*workable* — they turn the balance engine's diagnoses into a work queue rather
+than a log file — and at the current OCR accuracy that matters more than
+automatic categorisation.
+
+```
+pip install PySide6
+python -m statementbridge.gui.app                       # run it
+QT_QPA_PLATFORM=offscreen python tools/shoot.py out/    # render every screen to PNG
+```
 
 ## Install
 

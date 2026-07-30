@@ -136,6 +136,7 @@ def _read_page(
             dropped += 1
             continue
         row.ocr_confidence = line.confidence
+        row.bbox = (line.left, line.top, line.right, line.bottom)
         rows.append(row)
 
     diagnostics = {
