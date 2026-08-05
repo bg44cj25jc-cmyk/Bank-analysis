@@ -10,7 +10,7 @@ from pathlib import Path
 from .audit import report as audit_report
 from .balance.repair import settle
 from .money import parse_amount, signed_from_drcr
-from .parse import scanned
+from .parse import route
 from .parse.profiles import gramin_cc, sbi_current  # noqa: F401  (registers profiles)
 from .parse.profiles.base import all_profiles, get_profile
 
@@ -37,7 +37,7 @@ def _progress(position: int, total: int) -> None:
 
 def _run(args: argparse.Namespace):
     profile = get_profile(args.profile)
-    result = scanned.parse_pdf(
+    result = route.parse_statement(
         Path(args.pdf),
         profile,
         dpi=args.dpi,

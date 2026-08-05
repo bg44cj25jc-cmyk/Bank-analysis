@@ -208,3 +208,95 @@ def write_image_pdf(
 
     path.write_bytes(bytes(out))
     return path
+
+
+# --- mixed documents -----------------------------------------------------
+
+
+def _assemble(objects: list[bytes], catalog_id: int) -> bytes:
+    """Lay out the objects, build the xref table and close the file."""
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += str(index).encode() + b" 0 obj\n" + body + b"\nendobj\n"
+
+    xref_at = len(out)
+    out += b"xref\n0 " + str(len(objects) + 1).encode() + b"\n"
+    out += b"0000000000 65535 f \n"
+    for offset in offsets[1:]:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (b"trailer\n<< /Size " + str(len(objects) + 1).encode() + b" /Root "
+            + str(catalog_id).encode() + b" 0 R >>\nstartxref\n"
+            + str(xref_at).encode() + b"\n%%EOF\n")
+    return bytes(out)
+
+
+def write_mixed_pdf(path: Path, pages: list[list[str] | None], *, dpi: int = 300) -> Path:
+    """A document whose pages are not all the same kind.
+
+    A list of lines makes a text-layer page; ``None`` makes a scanned one. This
+    is the branch-stapled-a-rescan-into-a-digital-export case that per-page
+    classification exists for, and that any document-level decision gets wrong
+    by construction.
+    """
+    width_px, height_px = 320, 440
+    width_pt, height_pt = width_px / dpi * 72.0, height_px / dpi * 72.0
+    text_box = b"[0 0 595 842]"
+    scan_box = f"[0 0 {width_pt:.4f} {height_pt:.4f}]".encode("ascii")
+
+    objects: list[bytes] = []
+
+    def add(body: bytes) -> int:
+        objects.append(body)
+        return len(objects)
+
+    font_id = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>")
+    data = zlib.compress(_grey_bitmap(width_px, height_px))
+    image_id = add(
+        b"<< /Type /XObject /Subtype /Image /Width " + str(width_px).encode()
+        + b" /Height " + str(height_px).encode()
+        + b" /ColorSpace /DeviceGray /BitsPerComponent 8"
+        + b" /Filter /FlateDecode /Length " + str(len(data)).encode()
+        + b" >>\nstream\n" + data + b"\nendstream"
+    )
+
+    content_ids: list[int] = []
+    for lines in pages:
+        if lines is None:
+            stream = f"q {width_pt:.4f} 0 0 {height_pt:.4f} 0 0 cm /Im0 Do Q".encode("ascii")
+        else:
+            stream = _content_stream(lines)
+        content_ids.append(
+            add(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n"
+                + stream + b"\nendstream")
+        )
+
+    pages_id = len(objects) + len(pages) + 1
+    page_ids: list[int] = []
+    for lines, content_id in zip(pages, content_ids):
+        if lines is None:
+            resources = b"<< /XObject << /Im0 " + str(image_id).encode() + b" 0 R >> >>"
+            box = scan_box
+        else:
+            resources = b"<< /Font << /F1 " + str(font_id).encode() + b" 0 R >> >>"
+            box = text_box
+        page_ids.append(
+            add(
+                b"<< /Type /Page /Parent " + str(pages_id).encode()
+                + b" 0 R /MediaBox " + box + b" /Resources " + resources
+                + b" /Contents " + str(content_id).encode() + b" 0 R >>"
+            )
+        )
+
+    kids = b" ".join(f"{pid} 0 R".encode() for pid in page_ids)
+    actual_pages_id = add(
+        b"<< /Type /Pages /Kids [" + kids + b"] /Count "
+        + str(len(page_ids)).encode() + b" >>"
+    )
+    catalog_id = add(
+        b"<< /Type /Catalog /Pages " + str(actual_pages_id).encode() + b" 0 R >>"
+    )
+
+    path.write_bytes(_assemble(objects, catalog_id))
+    return path

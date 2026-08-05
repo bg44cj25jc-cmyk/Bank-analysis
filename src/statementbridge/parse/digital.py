@@ -17,14 +17,12 @@ against a genuine text-layer statement before being relied on.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
 
 from ..ocr.engine import OcrLine
 from ..ocr.lines import Word, group_into_rows
-from .frame import Anchor, ParseResult, Txn
-from .lineparse import build_txn
+from .frame import ParseResult
+from .pages import read_page
 from .profiles.base import BankProfile
-from .rowkind import RowKind, classify_line
 from .scanned import PRINTED_PAGE
 
 #: pdfplumber reports coordinates in points; scale to the integer pixel space
@@ -65,68 +63,15 @@ def parse_pdf(pdf: Path, profile: BankProfile) -> ParseResult:
         result.page_count = len(document.pages)
         for index, page in enumerate(document.pages, start=1):
             lines = read_lines(page)
-            rows, anchors, diagnostics = _read_page(
-                lines, profile, page_no=index, start_row=source_row
+            rows, anchors, diagnostics = read_page(
+                lines,
+                profile,
+                page_no=index,
+                start_row=source_row,
+                printed_page_pattern=PRINTED_PAGE,
             )
             result.rows.extend(rows)
             result.anchors.extend(anchors)
             result.diagnostics.append(diagnostics)
             source_row += len(lines)
     return result
-
-
-def _read_page(
-    lines: Sequence[OcrLine],
-    profile: BankProfile,
-    *,
-    page_no: int,
-    start_row: int,
-) -> tuple[list[Txn], list[Anchor], dict]:
-    rows: list[Txn] = []
-    anchors: list[Anchor] = []
-    printed_pages: set[int] = set()
-    limits_reached = False
-    dropped = 0
-
-    for offset, line in enumerate(lines):
-        source_row = start_row + offset
-        match = PRINTED_PAGE.search(line.text)
-        if match:
-            printed_pages.add(int(match.group(1)))
-
-        classification = classify_line(
-            line.text,
-            page_no=page_no,
-            source_row=source_row,
-            extra_patterns=profile.patterns(),
-        )
-        if classification.anchor is not None:
-            anchors.append(classification.anchor)
-
-        if classification.kind is RowKind.LIMITS_TABLE:
-            if offset > len(lines) * 0.6:
-                limits_reached = True
-            continue
-        if limits_reached or not classification.kind.is_transaction:
-            continue
-
-        row = build_txn(
-            line.text,
-            page_no=page_no,
-            source_row=source_row,
-            is_overdraft=profile.is_overdraft,
-        )
-        if row is None:
-            dropped += 1
-            continue
-        row.ocr_confidence = 100.0
-        rows.append(row)
-
-    return rows, anchors, {
-        "page_no": page_no,
-        "printed_pages": sorted(printed_pages),
-        "lines": len(lines),
-        "rows": len(rows),
-        "unparsed_lines": dropped,
-        "mean_confidence": 100.0,
-    }
