@@ -20,6 +20,7 @@ a software defect — see [Why the fixtures do not reconcile](#why-the-fixtures-
 | OCR pipeline (dot-matrix and ruled-table) | done |
 | Digital-text parser (pdfplumber) | done, synthetic tests only |
 | Bank profiles, audit and CLI | done |
+| Upload capture-quality gate and scanning SOP | done |
 | Rules engine, Excel, GUI, Tally XML, Ollama | not started (Phases 2–7) |
 
 ## Install
@@ -33,12 +34,20 @@ Requires Poppler (`pdftoppm`, `pdfinfo`) and Tesseract 5 on PATH.
 ## Use
 
 ```
+statementbridge quality     <pdf>                     # is this scan worth processing?
 statementbridge classify    <pdf>                     # text layer or scan?
 statementbridge audit       <pdf> --profile gramin_cc --expect
 statementbridge parse       <pdf> --profile sbi_current --out rows.csv
 statementbridge ocr-bakeoff <pdf> --profile gramin_cc --first 1 --last 3
 statementbridge profiles
 ```
+
+`quality` grades the capture before anything expensive happens, and names the
+scanner setting to change. Run it first. It exits 2 on `REJECT`, so a script can
+gate on it, and `--no-render` restricts it to the structural checks — which need
+neither Poppler nor Tesseract and settle a sixty-page file in about a third of a
+second. See [docs/SCANNING_SOP.md](docs/SCANNING_SOP.md) for the office-facing
+one-pager.
 
 `audit` reports what a file actually contains — page counts, printed page
 numbers, printed page totals, brought-forward balances — without assuming
@@ -104,6 +113,33 @@ capture never recorded:
 | 600 | 11% |
 
 **A 300–400 DPI optical rescan is the single change that would move this most.**
+
+### What the scanner actually recorded
+
+Read off the PDF object structure — image dimensions against the rectangle they
+are placed into, so this is the capture itself and not an inference from it:
+
+| Fixture | Sheets | Source pixels | Depth | Codec | Effective DPI |
+|---|---|---|---|---|---|
+| Gramin CC | 24 | ~1242×1731 | **1-bit bilevel** | CCITT G4 | **150 × 150** |
+| SBI Current | 60 | ~1244×1731 | 8-bit RGB | **JPEG, lossy** | **150 × 150** |
+
+The Gramin figure is the worse of the two and was not previously called out:
+the ledger is **1-bit**, so the greyscale edge information the recogniser was
+trained on was discarded *by the scanner*, before the file was written. That is
+the signature of a Text/Fax/Black-and-White preset. `preprocess.prepare()` is
+right to refuse to re-binarise it, but there is nothing left in the file to
+recover. SBI's lossy colour is waste rather than damage — it is what makes a
+60-page statement 17MB — but it softens digit edges for no gain.
+
+Both are exactly what `docs/SCANNING_SOP.md` prevents, and `statementbridge
+quality` now reports them in about a third of a second, at upload, instead of
+twenty minutes into a job that could not have reconciled.
+
+Every Gramin sheet also carries a `/Rotate`, alternating 90 and 270. Dividing
+pixels by points naively gives 108 × 208 DPI — non-square pixels, which no
+scanner produces — so the gate tries both axis pairings and takes the
+self-consistent one.
 
 ## Measurements behind the code
 

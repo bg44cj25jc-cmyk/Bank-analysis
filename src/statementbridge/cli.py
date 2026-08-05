@@ -113,6 +113,20 @@ def cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_quality(args: argparse.Namespace) -> int:
+    """Grade capture quality. Exit 2 on REJECT so a script can gate on it.
+
+    The exit code reports the verdict; it does not enforce a policy. A partner
+    may still have good reason to push a poor scan through, exactly as they may
+    override a failed reconciliation -- but they should do it knowingly.
+    """
+    from .ingest.quality import Verdict, inspect
+
+    report = inspect(Path(args.pdf), render_sample=not args.no_render)
+    print(report.render())
+    return 2 if report.verdict is Verdict.REJECT else 0
+
+
 def cmd_profiles(_: argparse.Namespace) -> int:
     for profile in all_profiles():
         kind = "cash-credit/OD" if profile.is_overdraft else "regular"
@@ -162,6 +176,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     classify_cmd.add_argument("pdf")
     classify_cmd.set_defaults(func=cmd_classify)
+
+    quality_cmd = subparsers.add_parser(
+        "quality", help="grade a scan's capture quality before parsing it"
+    )
+    quality_cmd.add_argument("pdf")
+    quality_cmd.add_argument(
+        "--no-render",
+        action="store_true",
+        help="structural checks only: no Poppler needed, answers in milliseconds",
+    )
+    quality_cmd.set_defaults(func=cmd_quality)
 
     profiles_cmd = subparsers.add_parser("profiles", help="list known bank profiles")
     profiles_cmd.set_defaults(func=cmd_profiles)

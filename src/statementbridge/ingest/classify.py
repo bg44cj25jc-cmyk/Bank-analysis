@@ -43,17 +43,24 @@ class DocumentClass:
         return median(self.char_counts) if self.char_counts else 0.0
 
 
+def classify_pages(document) -> DocumentClass:
+    """Classify an already-open pdfplumber document.
+
+    Split out from :func:`classify` so a caller that has the file open already
+    -- the upload quality gate -- does not pay to parse it a second time.
+    """
+    pages: list[PageClass] = []
+    counts: list[int] = []
+    for page in document.pages:
+        text = page.extract_text() or ""
+        count = len(text.strip())
+        counts.append(count)
+        pages.append(PageClass.DIGITAL if count >= TEXT_FLOOR else PageClass.SCANNED)
+    return DocumentClass(pages=pages, char_counts=counts)
+
+
 def classify(pdf: Path) -> DocumentClass:
     import pdfplumber
 
-    pages: list[PageClass] = []
-    counts: list[int] = []
     with pdfplumber.open(str(pdf)) as document:
-        for page in document.pages:
-            text = page.extract_text() or ""
-            count = len(text.strip())
-            counts.append(count)
-            pages.append(
-                PageClass.DIGITAL if count >= TEXT_FLOOR else PageClass.SCANNED
-            )
-    return DocumentClass(pages=pages, char_counts=counts)
+        return classify_pages(document)
