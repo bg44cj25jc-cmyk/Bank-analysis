@@ -30,6 +30,32 @@ def to_grey(image: np.ndarray) -> np.ndarray:
 SKEW_FLOOR = 0.5
 
 
+def measure_skew(image: np.ndarray) -> float | None:
+    """Dominant ink angle in degrees, or None when the page carries no ink.
+
+    Separated out from :func:`deskew` so the upload quality gate can report an
+    angle without rotating anything.
+
+    **Advisory only.** This estimator keys on dominant ink orientation, which
+    the full-width rules and right-hand user-id block of these ledgers bias --
+    see :func:`prepare` for the page where it chose an angle that destroyed
+    extraction outright. It is good enough to flag a sheet that went through the
+    feeder crooked; it is not good enough to act on unsupervised.
+    """
+    grey = to_grey(image)
+    inverted = cv2.bitwise_not(grey)
+    _, binary = cv2.threshold(inverted, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    coords = cv2.findNonZero(binary)
+    if coords is None:
+        return None
+    angle = cv2.minAreaRect(coords)[-1]
+    if angle < -45:
+        angle += 90
+    elif angle > 45:
+        angle -= 90
+    return float(angle)
+
+
 def deskew(image: np.ndarray, *, limit: float = 5.0, floor: float = SKEW_FLOOR) -> np.ndarray:
     """Straighten a scan using the dominant text angle.
 
@@ -37,16 +63,9 @@ def deskew(image: np.ndarray, *, limit: float = 5.0, floor: float = SKEW_FLOOR) 
     or two of skew smears a row's characters across two scan lines.
     """
     grey = to_grey(image)
-    inverted = cv2.bitwise_not(grey)
-    _, binary = cv2.threshold(inverted, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    coords = cv2.findNonZero(binary)
-    if coords is None:
+    angle = measure_skew(grey)
+    if angle is None:
         return image
-    angle = cv2.minAreaRect(coords)[-1]
-    if angle < -45:
-        angle += 90
-    elif angle > 45:
-        angle -= 90
     if abs(angle) < floor or abs(angle) > limit:
         return image
     height, width = grey.shape[:2]

@@ -10,7 +10,7 @@ from pathlib import Path
 from .audit import report as audit_report
 from .balance.repair import settle
 from .money import parse_amount, signed_from_drcr
-from .parse import scanned
+from .parse import route
 from .parse.profiles import gramin_cc, sbi_current  # noqa: F401  (registers profiles)
 from .parse.profiles.base import all_profiles, get_profile
 
@@ -37,7 +37,7 @@ def _progress(position: int, total: int) -> None:
 
 def _run(args: argparse.Namespace):
     profile = get_profile(args.profile)
-    result = scanned.parse_pdf(
+    result = route.parse_statement(
         Path(args.pdf),
         profile,
         dpi=args.dpi,
@@ -113,6 +113,20 @@ def cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_quality(args: argparse.Namespace) -> int:
+    """Grade capture quality. Exit 2 on REJECT so a script can gate on it.
+
+    The exit code reports the verdict; it does not enforce a policy. A partner
+    may still have good reason to push a poor scan through, exactly as they may
+    override a failed reconciliation -- but they should do it knowingly.
+    """
+    from .ingest.quality import Verdict, inspect
+
+    report = inspect(Path(args.pdf), render_sample=not args.no_render)
+    print(report.render())
+    return 2 if report.verdict is Verdict.REJECT else 0
+
+
 def cmd_profiles(_: argparse.Namespace) -> int:
     for profile in all_profiles():
         kind = "cash-credit/OD" if profile.is_overdraft else "regular"
@@ -162,6 +176,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     classify_cmd.add_argument("pdf")
     classify_cmd.set_defaults(func=cmd_classify)
+
+    quality_cmd = subparsers.add_parser(
+        "quality", help="grade a scan's capture quality before parsing it"
+    )
+    quality_cmd.add_argument("pdf")
+    quality_cmd.add_argument(
+        "--no-render",
+        action="store_true",
+        help="structural checks only: no Poppler needed, answers in milliseconds",
+    )
+    quality_cmd.set_defaults(func=cmd_quality)
 
     profiles_cmd = subparsers.add_parser("profiles", help="list known bank profiles")
     profiles_cmd.set_defaults(func=cmd_profiles)

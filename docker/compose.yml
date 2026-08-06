@@ -1,0 +1,74 @@
+# Single-tier by default: the API and the workers on the DS925+.
+#
+# The split to a second machine is deliberately a deployment change and not a
+# rewrite. The worker holds no database connection -- it claims and reports over
+# HTTP -- so moving OCR to the desktop means running this same worker service
+# there with SB_API_URL pointing back at the NAS, and dropping the local one.
+# Nothing in the code knows the difference.
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: statementbridge:latest
+    container_name: statementbridge-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      SB_DATA_DIR: /data
+      SB_WORKER_TOKEN: ${SB_WORKER_TOKEN:?set this in .env}
+      # The gate measures; this decides. Left off so the firm's existing backlog
+      # of 150 DPI scans stays processable -- a REJECT is advice, loudly given.
+      SB_REJECT_BLOCKS_UPLOAD: ${SB_REJECT_BLOCKS_UPLOAD:-false}
+      SB_CLAIM_TIMEOUT: ${SB_CLAIM_TIMEOUT:-3600}
+    volumes:
+      # Database and scratch belong on the NVMe pool; uploads on the encrypted
+      # share with snapshots. Two mounts, because they have different jobs.
+      - ${SB_FAST_VOLUME:-./data}:/data
+      - ${SB_ARCHIVE_VOLUME:-./data/uploads}:/data/uploads
+    deploy:
+      resources:
+        limits:
+          # Measured: 97MB idle, 150MB steady after repeated 17MB uploads and a
+          # hundred reads, flat thereafter. The API never runs OCR -- it only
+          # reads PDF structure -- so it stays small. 384M is headroom, not need.
+          memory: 384M
+    networks: [statementbridge]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: statementbridge:latest
+    restart: unless-stopped
+    command: ["statementbridge-worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SB_DATA_DIR: /data
+      SB_WORKER_TOKEN: ${SB_WORKER_TOKEN:?set this in .env}
+      # Point this at the NAS to run the worker on the desktop instead.
+      SB_API_URL: ${SB_API_URL:-http://api:8000}
+    volumes:
+      - ${SB_FAST_VOLUME:-./data}:/data
+      - ${SB_ARCHIVE_VOLUME:-./data/uploads}:/data/uploads
+    deploy:
+      # Two, not four -- but the reason is cores, not memory. The DS925+ has
+      # four, and the review screens the iPads are using need one of them.
+      replicas: ${SB_WORKER_REPLICAS:-2}
+      resources:
+        limits:
+          # Measured on the heavier of the two preprocessing paths (the SBI
+          # ruled table, where Sauvola holds several float32 copies of the page):
+          # 397MB peak in the Python process plus 124MB in the Tesseract
+          # subprocess, which is a separate process and so not counted in the
+          # first figure. ~520MB peak, ~176MB between pages.
+          memory: 768M
+    networks: [statementbridge]
+
+networks:
+  statementbridge:
+    driver: bridge
