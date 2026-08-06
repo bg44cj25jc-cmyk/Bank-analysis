@@ -104,6 +104,27 @@ def test_a_row_the_balance_engine_could_not_settle_is_still_categorised():
     assert summary.of(Category.UPI_IN).count == 1
 
 
+def test_a_row_carrying_no_figure_does_not_make_a_sound_statement_look_broken():
+    """``settle`` zeroes a row it could not resolve rather than fabricate one.
+
+    The chain then counts it under neither credits nor debits, while the
+    summary still has to list it somewhere. Comparing the two counts directly
+    reported a perfectly consistent statement as failing to tie -- which is
+    exactly the kind of false alarm that teaches people to ignore the check.
+    """
+    rows, chain = statement()
+    rows.append(
+        Txn(page_no=1, source_row=99, narration="UPI/CR/UNREADABLE/YBL",
+            row_state=RowState.UNRESOLVED)
+    )
+    summary = summary_for(rows)
+
+    assert summary.count == len(rows)
+    assert summary.movement_count == len(rows) - 1
+    assert summary.settled_count == 1
+    assert summary.reconciles_with(chain)
+
+
 # --- what the sheet says --------------------------------------------------
 
 

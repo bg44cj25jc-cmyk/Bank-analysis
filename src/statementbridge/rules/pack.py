@@ -29,10 +29,10 @@ which every neighbouring row and every printed page total checks. The token is
 one more thing a 150 DPI recogniser can drop, and when it does the balance is
 still right.
 
-**RTGS is not mapped.** The taxonomy the firm reads has no RTGS code, and the
-nearest one says NEFT. Labelling a wire transfer as something it is not, to
-avoid the word ``UNCLASSIFIED``, would trade an obvious gap for a quiet error --
-so an RTGS line goes to review, where a person can put it where it belongs.
+**RTGS is a code of our own** rather than a reuse of NEFT. The client's sheet has
+no RTGS row because their savings account never used the rail; a current account
+uses it constantly. Labelling a wire transfer as a different rail, to keep the
+two sheets identical, would have bought that tidiness with a quiet error.
 """
 
 from __future__ import annotations
@@ -202,13 +202,24 @@ _RULES: Final[tuple[Rule, ...]] = (
     ),
 
     # --- 7. the rails, last -------------------------------------------------
+    # The aggregator, on either rail it settles over. The workbook gives its
+    # NEFT settlements a ledger of their own and leaves the IMPS ones on the
+    # generic rail ledger; that is an inconsistency in the sheet rather than a
+    # distinction, and its own Notes item 7 reads them as one thing ("NEFT/IMPS
+    # inward are mostly PhonePe aggregator settlements -> business receipts").
+    # The same payer settling over a different rail is the same payer.
     Rule(id="neft.phonepe", category=C.NEFT_IN, words=("neft", "phonepe"),
          direction=CREDIT, ledger=_PHONEPE_LEDGER,
          why="aggregator settlement: a business receipt, not an anonymous credit"),
+    Rule(id="imps.phonepe", category=C.IMPS_IN, words=("imps", "phonepe"),
+         direction=CREDIT, ledger=_PHONEPE_LEDGER,
+         why="the same aggregator over the other rail"),
     Rule(id="upi.in", category=C.UPI_IN, words=("upi",), direction=CREDIT),
     Rule(id="upi.out", category=C.UPI_OUT, words=("upi",), direction=DEBIT),
     Rule(id="neft.in", category=C.NEFT_IN, words=("neft",), direction=CREDIT),
     Rule(id="neft.out", category=C.NEFT_OUT, words=("neft",), direction=DEBIT),
+    Rule(id="rtgs.in", category=C.RTGS_IN, words=("rtgs",), direction=CREDIT),
+    Rule(id="rtgs.out", category=C.RTGS_OUT, words=("rtgs",), direction=DEBIT),
     Rule(id="imps.in", category=C.IMPS_IN, words=("imps",), direction=CREDIT),
     Rule(id="imps.out", category=C.IMPS_OUT, words=("imps",), direction=DEBIT),
 )

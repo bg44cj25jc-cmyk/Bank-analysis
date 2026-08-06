@@ -25,14 +25,29 @@ from statementbridge.rules.taxonomy import Category, Direction
 # --- the taxonomy ---------------------------------------------------------
 
 
-def test_every_workbook_code_exists():
-    """The firm reads these codes off its own summary sheet."""
+#: The workbook's own 33 codes. The firm reads these off its summary sheet, so
+#: they are transcribed rather than designed and this set should not move.
+WORKBOOK_CODES = {
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N",
+    "O", "P", "Q", "R", "S", "T1", "T2", "U1", "U2", "V", "W", "X", "Y",
+    "Z", "NEFT_IN", "NEFT_OUT", "IMPS_IN", "IMPS_OUT", "UNCL",
+}
+
+#: Ours. A savings account never used the rail; a current account uses it
+#: constantly, and the nearest workbook code would have said NEFT.
+ADDED_CODES = {"RTGS_IN", "RTGS_OUT"}
+
+
+def test_every_workbook_code_exists_and_the_additions_are_declared():
+    """Nothing may quietly appear in or vanish from the taxonomy.
+
+    Splitting the two sets is the point: a code the firm gave us and a code we
+    added are different kinds of thing, and the day someone adds a third it
+    should have to be written down here.
+    """
     codes = {category.value for category in Category}
-    assert codes == {
-        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N",
-        "O", "P", "Q", "R", "S", "T1", "T2", "U1", "U2", "V", "W", "X", "Y",
-        "Z", "NEFT_IN", "NEFT_OUT", "IMPS_IN", "IMPS_OUT", "UNCL",
-    }
+    assert codes == WORKBOOK_CODES | ADDED_CODES
+    assert WORKBOOK_CODES <= codes, "a code the firm reads has gone missing"
 
 
 def test_every_category_has_a_ledger_and_a_description():

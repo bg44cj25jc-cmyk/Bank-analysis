@@ -22,7 +22,9 @@ import sqlite3
 from pathlib import Path
 
 #: Bumped whenever ``SCHEMA`` changes. Applied on open; there is no downgrade.
-SCHEMA_VERSION = 1
+#:
+#: 2 -- ``jobs.categories_json``, the rules engine's category summary.
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     unresolved      INTEGER,
     reconciled      INTEGER,
     chain_json      TEXT,
+    categories_json TEXT,
     error           TEXT,
 
     claimed_at      TEXT,
@@ -94,6 +97,36 @@ BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
 """
 
 
+#: Columns added after version 1, as ``(table, column, definition)``.
+#:
+#: These exist because ``CREATE TABLE IF NOT EXISTS`` does exactly nothing to a
+#: table that is already there. Running the schema script over an existing
+#: database therefore leaves it on the old shape and reports no error at all --
+#: the first sign of trouble is a query failing in production, long after the
+#: upgrade looked like it worked. So added columns are applied separately, and
+#: by asking the database what it actually has rather than by trusting
+#: ``user_version`` to have been written correctly by an earlier release.
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("jobs", "categories_json", "TEXT"),
+)
+
+
+def _migrate(connection: sqlite3.Connection) -> list[str]:
+    """Bring an existing database up to ``SCHEMA_VERSION``. Idempotent."""
+    applied: list[str] = []
+    for table, column, definition in _ADDED_COLUMNS:
+        existing = {
+            row["name"]
+            for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if not existing:
+            continue  # the table is new; the schema script already built it
+        if column not in existing:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            applied.append(f"{table}.{column}")
+    return applied
+
+
 def connect(path: Path | str) -> sqlite3.Connection:
     """Open the database, creating and migrating it if necessary."""
     path = Path(path)
@@ -110,5 +143,6 @@ def connect(path: Path | str) -> sqlite3.Connection:
     # writing; five seconds is far longer than any transaction here takes.
     connection.execute("PRAGMA busy_timeout=5000")
     connection.executescript(SCHEMA)
+    _migrate(connection)
     connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     return connection

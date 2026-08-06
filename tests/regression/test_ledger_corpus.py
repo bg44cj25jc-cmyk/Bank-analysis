@@ -121,19 +121,59 @@ def test_every_row_lands_in_the_category_a_person_gave_it(corpus, decisions):
     assert not disagreements, f"{len(disagreements)} of {len(corpus)}: {disagreements[:5]}"
 
 
+#: The one place the engine deliberately disagrees with the workbook.
+#:
+#: The sheet gives PhonePe's NEFT settlements a ledger of their own and leaves
+#: its IMPS settlements on the generic rail ledger. That is not a distinction
+#: anyone drew: NEFT prints ``PHONEPE LIMITED`` with a space and IMPS prints
+#: ``PHONEPELIMITEDPAYMENTAGGREGATORE`` in one piece, so the person doing this
+#: by hand recognised the payer on one rail and not on the other. The workbook's
+#: own Notes item 7 reads them as one thing ("NEFT/IMPS inward are mostly
+#: PhonePe aggregator settlements -> business receipts").
+#:
+#: Listed row by row rather than allowed for by a threshold, so that any
+#: disagreement nobody chose still fails.
+INTENDED_LEDGER_DIVERGENCE = {
+    "IMPS-605004744473-PHONEPELIMITED-UTIB0003567",
+    "IMPS-607383395832-PHONEPELIMITEDPAYMENTAGGREGATORE",
+    "IMPS-607487871175-PHONEPELIMITEDPAYMENTAGGREGATORE",
+    "IMPS-608524273627-PHONEPELIMITEDPAYMENTAGGREGATORE",
+    "IMPS-608524480860-PHONEPELIMITEDPAYMENTAGGREGATORE",
+}
+AGGREGATOR_LEDGER = "Sundry Receipts - PhonePe Aggregator"
+
+
 def test_every_row_gets_the_tally_ledger_a_person_chose(corpus, decisions):
     """Stricter than the category: the ledger is what is actually posted.
 
     This is the assertion that caught the engine naming the self-transfer
     ledger ``MR. AJOY NAG - Own Accounts`` from a header that shouts, where the
-    firm keeps ``Ajoy Nag - Own Accounts``.
+    firm keeps ``Ajoy Nag - Own Accounts``. The category was right on all 41 of
+    those rows; only the thing Tally would have received was wrong.
     """
     disagreements = [
         (row.narration, row.ledger, decision.ledger)
         for row, decision in zip(corpus, decisions)
         if decision.ledger != row.ledger
+        and row.narration not in INTENDED_LEDGER_DIVERGENCE
     ]
     assert not disagreements, f"{len(disagreements)} of {len(corpus)}: {disagreements[:5]}"
+
+
+def test_the_intended_divergence_is_exactly_the_rows_it_claims_to_be(corpus, decisions):
+    """An exception list that stopped being exercised would be a lie by omission."""
+    diverged = {
+        row.narration
+        for row, decision in zip(corpus, decisions)
+        if decision.ledger != row.ledger
+    }
+    assert diverged == INTENDED_LEDGER_DIVERGENCE
+
+    for row, decision in zip(corpus, decisions):
+        if row.narration in INTENDED_LEDGER_DIVERGENCE:
+            assert decision.ledger == AGGREGATOR_LEDGER
+            # The ledger moves; the rail the money took is still recorded.
+            assert decision.category is Category.IMPS_IN
 
 
 def test_no_row_is_made_contra_that_was_not_and_none_is_lost(corpus, decisions):
@@ -209,6 +249,6 @@ def test_this_corpus_exercises_a_third_of_the_taxonomy_and_a_sixth_of_the_pack(
     any further work on this one.
     """
     assert len({row.label for row in corpus}) == 10
-    assert len(Category) == 33
+    assert len(Category) == 35
     assert len({decision.rule_id for decision in decisions}) == 11
-    assert len(DEFAULT_PACK) == 73
+    assert len(DEFAULT_PACK) == 76

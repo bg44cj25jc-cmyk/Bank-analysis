@@ -60,6 +60,8 @@ class JobSummary(BaseModel):
 class JobDetail(JobSummary):
     quality: QualityReport | None = None
     chain: dict[str, Any] | None = None
+    #: The category summary. Its money is text, like everything else here.
+    categories: dict[str, Any] | None = None
     blocks_export: bool = True
 
 
@@ -122,6 +124,10 @@ class ClaimedJob(BaseModel):
     profile_key: str | None = None
     opening: str | None = None
     closing: str | None = None
+    #: The confirmed account holder. The worker classifies, and self-transfer
+    #: detection is a name match, so the name has to travel with the job --
+    #: there is no database on that side to look it up in.
+    holder: str | None = None
 
 
 class ProgressReport(BaseModel):
@@ -146,6 +152,9 @@ class ParseResultIn(BaseModel):
     unresolved: int
     reconciled: bool
     variance: str
+    #: Optional so a worker built before the rules engine still reports
+    #: successfully. Its rows simply arrive uncategorised.
+    categories: dict[str, Any] | None = None
 
 
 class FailureReport(BaseModel):

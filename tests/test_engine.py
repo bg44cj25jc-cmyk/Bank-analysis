@@ -71,6 +71,22 @@ def test_the_aggregator_override_does_not_leak_onto_other_rails():
     assert decision.ledger == "Sundry Receipts / Debtors"
 
 
+def test_the_same_payer_is_recognised_however_the_rail_spells_it():
+    """NEFT prints ``PHONEPE LIMITED``; IMPS runs the whole thing together.
+
+    Whole-word matching alone recognises the payer on one rail and not the
+    other -- which is how the workbook came to give its NEFT settlements a
+    ledger of their own and leave the IMPS ones generic.
+    """
+    spaced = decide("NEFT CR-UTIB0001506-PHONEPE LIMITED", CREDIT)
+    run_together = decide("IMPS-607383395832-PHONEPELIMITEDPAYMENTAGGREGATORE", CREDIT)
+
+    assert spaced.ledger == run_together.ledger == "Sundry Receipts - PhonePe Aggregator"
+    # Same payer, same ledger, but the rail it took is still recorded.
+    assert spaced.category is Category.NEFT_IN
+    assert run_together.category is Category.IMPS_IN
+
+
 # --- what outranks a rail -------------------------------------------------
 
 
@@ -171,9 +187,11 @@ def test_nothing_matched_means_unclassified_and_not_a_nearby_guess():
     assert not decision.classified
 
 
-def test_rtgs_is_left_unclassified_rather_than_labelled_neft():
-    """The taxonomy has no RTGS code, and the nearest one would be a lie."""
-    assert category_of("RTGS CR-HDFC0000123-SOME PAYER", CREDIT) is Category.UNCLASSIFIED
+def test_rtgs_has_codes_of_its_own_rather_than_borrowing_nefts():
+    """A wire transfer labelled NEFT would be a quiet error, not a tidy sheet."""
+    assert category_of("RTGS CR-HDFC0000123-SOME PAYER", CREDIT) is Category.RTGS_IN
+    assert category_of("RTGS DR-HDFC0000123-SOME PAYEE", DEBIT) is Category.RTGS_OUT
+    assert Category.RTGS_IN.ledger() == "Sundry Receipts - RTGS"
 
 
 def test_a_row_that_did_not_move_the_balance_claims_no_direction():

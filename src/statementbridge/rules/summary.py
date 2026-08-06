@@ -52,6 +52,16 @@ class CategorySummary:
     """Every category, in the workbook's order, with what landed in it."""
 
     totals: list[CategoryTotal] = field(default_factory=list)
+    #: Rows that actually moved the balance.
+    #:
+    #: Not the same as ``count``, and the difference is what makes the tie
+    #: check work. ``ChainReport`` counts a row under ``credit_count`` or
+    #: ``debit_count`` only if the corresponding figure is non-zero, so a row
+    #: the balance engine could not settle -- which ``settle`` zeroes rather
+    #: than let it contribute a fabricated figure -- appears in the summary and
+    #: in neither of those. Comparing the two totals directly would report a
+    #: perfectly consistent statement as broken.
+    movement_count: int = 0
     #: Rows whose classification a person should look at: unclassified, plus
     #: the matches the rules themselves flagged as worth confirming.
     review_count: int = 0
@@ -84,12 +94,17 @@ class CategorySummary:
     def contra_count(self) -> int:
         return sum(total.count for total in self.totals if total.category.contra)
 
+    @property
+    def settled_count(self) -> int:
+        """Rows carrying no figure at all: unsettled, or genuinely zero."""
+        return self.count - self.movement_count
+
     def reconciles_with(self, chain: ChainReport) -> bool:
         """Do the category totals equal the balance chain's, to the paisa?"""
         return (
             self.total_credit == chain.total_credit
             and self.total_debit == chain.total_debit
-            and self.count == chain.credit_count + chain.debit_count
+            and self.movement_count == chain.credit_count + chain.debit_count
         )
 
     def variance_against(self, chain: ChainReport) -> tuple[Decimal, Decimal]:
@@ -114,6 +129,7 @@ class CategorySummary:
                 for total in self.totals
             ],
             "count": self.count,
+            "movement_count": self.movement_count,
             "total_credit": str(self.total_credit),
             "total_debit": str(self.total_debit),
             "unclassified": self.unclassified,
@@ -156,6 +172,11 @@ class CategorySummary:
             f"unclassified {self.unclassified}   for review {self.review_count}   "
             f"contra {self.contra_count}"
         )
+        if self.settled_count:
+            lines.append(
+                f"{self.settled_count} row(s) carry no figure and are counted "
+                "above but move nothing"
+            )
         return "\n".join(lines)
 
 
@@ -165,6 +186,7 @@ def summarise(movements: Sequence[Movement]) -> CategorySummary:
     credits: dict[Category, Decimal] = {}
     debits: dict[Category, Decimal] = {}
     review = 0
+    moved = 0
     ledgers: list[str] = []
 
     for movement in movements:
@@ -172,6 +194,8 @@ def summarise(movements: Sequence[Movement]) -> CategorySummary:
         counts[category] = counts.get(category, 0) + 1
         credits[category] = credits.get(category, ZERO) + movement.credit
         debits[category] = debits.get(category, ZERO) + movement.debit
+        if movement.credit > 0 or movement.debit > 0:
+            moved += 1
         if movement.classification.needs_review:
             review += 1
         if movement.classification.ledger not in ledgers:
@@ -188,6 +212,7 @@ def summarise(movements: Sequence[Movement]) -> CategorySummary:
             # Every category, present or not: the zero lines are the checklist.
             for category in SUMMARY_ORDER
         ],
+        movement_count=moved,
         review_count=review,
         ledgers=ledgers,
     )

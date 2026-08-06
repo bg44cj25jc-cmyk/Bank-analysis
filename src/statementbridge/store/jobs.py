@@ -21,7 +21,7 @@ _COLUMNS = (
     "id, created_at, updated_at, filename, state, stage, profile_key, "
     "quality_verdict, quality_json, account_no, holder, opening, closing, "
     "variance, page_count, row_count, unresolved, reconciled, chain_json, "
-    "error, claimed_at, claimed_by, progress_done, progress_total"
+    "categories_json, error, claimed_at, claimed_by, progress_done, progress_total"
 )
 
 
@@ -46,6 +46,9 @@ def _to_job(row: sqlite3.Row) -> Job:
         unresolved=row["unresolved"],
         reconciled=None if row["reconciled"] is None else bool(row["reconciled"]),
         chain=json.loads(row["chain_json"]) if row["chain_json"] else None,
+        categories=(
+            json.loads(row["categories_json"]) if row["categories_json"] else None
+        ),
         error=row["error"],
         claimed_at=row["claimed_at"],
         claimed_by=row["claimed_by"],

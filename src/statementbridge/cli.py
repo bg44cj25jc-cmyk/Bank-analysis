@@ -13,6 +13,8 @@ from .money import parse_amount, signed_from_drcr
 from .parse import route
 from .parse.profiles import gramin_cc, sbi_current  # noqa: F401  (registers profiles)
 from .parse.profiles.base import all_profiles, get_profile
+from .rules.engine import classify, movements
+from .rules.summary import summarise
 
 #: Figures the client supplied for the two fixtures, used by `audit --expect`.
 EXPECTED = {
@@ -53,7 +55,15 @@ def _run(args: argparse.Namespace):
     if closing is not None and profile.is_overdraft:
         closing = signed_from_drcr(closing, "DR")
     chain, _ = settle(result.rows, opening, closing=closing)
-    return profile, result, chain
+
+    # Classification is part of a run, not a separate pass: the frame carries
+    # category columns now, and emitting them blank would be a worse answer
+    # than emitting UNCLASSIFIED.
+    decisions = classify(result.rows, holder=args.holder)
+    for row, decision in zip(result.rows, decisions):
+        row.apply(decision)
+    categories = summarise(movements(result.rows, decisions))
+    return profile, result, chain, categories
 
 
 def _opening_balance(args, profile, result) -> Decimal:
@@ -69,7 +79,7 @@ def _opening_balance(args, profile, result) -> Decimal:
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
-    profile, result, chain = _run(args)
+    profile, result, chain, _ = _run(args)
     expected = EXPECTED.get(profile.key, {}) if args.expect else {}
     report = audit_report.build(
         Path(args.pdf), profile.name, result, chain, expected
@@ -78,8 +88,36 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_categorise(args: argparse.Namespace) -> int:
+    """Classify a statement and print the category summary.
+
+    Exits non-zero when the summary does not tie to the balance chain. That is
+    an internal contradiction rather than a bad statement -- every settled row
+    belongs to exactly one category, so the two totals cannot legitimately
+    disagree, and a script should be able to stop on it.
+    """
+    _, _, chain, categories = _run(args)
+    print(categories.render(chain))
+    return 0 if categories.reconciles_with(chain) else 1
+
+
+def cmd_categories(_: argparse.Namespace) -> int:
+    from .rules.taxonomy import SUMMARY_ORDER
+
+    for category in SUMMARY_ORDER:
+        contra = "contra" if category.contra else ""
+        direction = (
+            "" if category.direction.value == "EITHER" else category.direction.value.lower()
+        )
+        print(
+            f"{category.value:<9}{category.description:<30}"
+            f"{direction:<8}{contra:<7}{category.ledger()}"
+        )
+    return 0
+
+
 def cmd_parse(args: argparse.Namespace) -> int:
-    _, result, chain = _run(args)
+    _, result, chain, _ = _run(args)
     frame = result.to_dataframe()
     if args.out:
         frame.to_csv(args.out, index=False)
@@ -149,6 +187,12 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--last", type=int, default=None, help="last PDF page")
         sub.add_argument("--opening", default=None, help="opening balance, e.g. '71,85,895.72'")
         sub.add_argument("--closing", default=None, help="printed closing balance")
+        sub.add_argument(
+            "--holder",
+            default=None,
+            help="account holder, e.g. 'AJOY NAG'. Without it, transfers between "
+                 "the client's own accounts cannot be told from third-party ones",
+        )
         sub.add_argument("--quiet", action="store_true")
 
     audit_cmd = subparsers.add_parser(
@@ -164,6 +208,17 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(parse_cmd)
     parse_cmd.add_argument("--out", default=None, help="write CSV here")
     parse_cmd.set_defaults(func=cmd_parse)
+
+    categorise_cmd = subparsers.add_parser(
+        "categorise", help="classify the transactions and total them by category"
+    )
+    add_common(categorise_cmd)
+    categorise_cmd.set_defaults(func=cmd_categorise)
+
+    categories_cmd = subparsers.add_parser(
+        "categories", help="list the category taxonomy and its Tally ledgers"
+    )
+    categories_cmd.set_defaults(func=cmd_categories)
 
     bakeoff_cmd = subparsers.add_parser(
         "ocr-bakeoff", help="compare OCR engines on real pages"

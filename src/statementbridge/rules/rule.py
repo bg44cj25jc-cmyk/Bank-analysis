@@ -44,6 +44,15 @@ _FUZZY_MINIMUM: Final[int] = 5
 #: Whole-word similarity, not partial: the words being compared are already
 #: isolated, so a partial ratio would only re-admit the substring problem.
 _FUZZY_THRESHOLD: Final[int] = 85
+#: Shortest rule word that may match a narration word by prefix.
+#:
+#: Rails disagree about whether a payee's name has spaces in it. The same
+#: aggregator arrives as ``PHONEPE LIMITED`` over NEFT and as
+#: ``PHONEPELIMITEDPAYMENTAGGREGATORE`` over IMPS, so a rule that could only
+#: match whole words would recognise a payer on one rail and not the other --
+#: which is exactly the inconsistency in the client's own workbook. Six
+#: characters is long enough that a prefix is a name and not a coincidence.
+_PREFIX_MINIMUM: Final[int] = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,10 +193,13 @@ class Rule:
             return True
         if len(word) < _FUZZY_MINIMUM:
             return False
-        return any(
-            fuzz.ratio(word, candidate) >= _FUZZY_THRESHOLD
-            for candidate in narration.words
-        )
+        prefixable = len(word) >= _PREFIX_MINIMUM
+        for candidate in narration.words:
+            if prefixable and candidate.startswith(word):
+                return True
+            if fuzz.ratio(word, candidate) >= _FUZZY_THRESHOLD:
+                return True
+        return False
 
 
 @dataclass(frozen=True, slots=True)

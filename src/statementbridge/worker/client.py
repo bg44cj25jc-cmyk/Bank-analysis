@@ -23,6 +23,7 @@ class ClaimedJob:
     profile_key: str | None = None
     opening: str | None = None
     closing: str | None = None
+    holder: str | None = None
 
 
 class ApiClient:
