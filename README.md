@@ -3,7 +3,8 @@
 Converts Indian bank statement PDFs into Tally-ready output for one financial
 year. Offline by default: nothing leaves the machine.
 
-Built for SuhagKuti Tax & Legal Services. **Phase 1 (parser core) — CLI only.**
+Built for SuhagKuti Tax & Legal Services. **Parser core plus the service
+layer: CLI, HTTP API and a worker queue.**
 
 ## Status
 
@@ -21,7 +22,9 @@ a software defect — see [Why the fixtures do not reconcile](#why-the-fixtures-
 | Digital-text parser (pdfplumber) | done, synthetic tests only |
 | Bank profiles, audit and CLI | done |
 | Upload capture-quality gate and scanning SOP | done |
-| Rules engine, Excel, GUI, Tally XML, Ollama | not started (Phases 2–7) |
+| Per-page routing between the two parser families | done |
+| FastAPI service, job queue and worker | done |
+| Rules engine, Excel, GUI, Tally XML, Ollama | not started (Phases 4–8) |
 
 ## Install
 
@@ -52,6 +55,43 @@ one-pager.
 `audit` reports what a file actually contains — page counts, printed page
 numbers, printed page totals, brought-forward balances — without assuming
 anything. It is the first thing to run on a statement that misbehaves.
+
+## Running it as a service
+
+```
+pip install -e ".[api]"
+cp docker/.env.example docker/.env      # set SB_WORKER_TOKEN
+docker compose -f docker/compose.yml up -d
+```
+
+Two containers from one image: `api` serves the browsers, `worker` does the
+recognising. A statement is uploaded, graded, read for its account header,
+confirmed by a person, then parsed.
+
+**The worker never opens the database.** It claims jobs and reports results over
+HTTP, which is the whole reason the deployment can start on one machine and grow
+to two without being rewritten — running OCR on a faster desktop instead means
+starting the same worker there with `SB_API_URL` pointing back at the NAS, and
+nothing in the code knows the difference. `docker/compose.desktop.yml` is that
+second machine. When it is off, jobs simply queue.
+
+Measured footprints, so the budget is not guesswork:
+
+| Process | Steady | Peak |
+|---|---|---|
+| `api` | 150 MB | 150 MB (flat over 100 reads and four 17 MB uploads) |
+| `worker`, dot-matrix page | 105 MB | 129 MB |
+| `worker`, ruled table (Sauvola) | 176 MB | **397 MB** |
+| `tesseract` subprocess | — | 124 MB (separate process; add it) |
+
+So roughly **520 MB per concurrent worker at peak**, and the binding constraint
+on a four-core NAS turns out to be cores rather than memory.
+
+The image **asserts** its Tesseract major.minor at build time rather than pinning
+an exact Debian revision. Row agreement moves between recogniser versions — 37.8%
+against 45.5% on the same fixture — so an engine that drifted would silently
+re-baseline the numbers that decide whether a rescan helped, while an exact pin
+would break the build every time Debian issues a security update.
 
 ## How it works
 

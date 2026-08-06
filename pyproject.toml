@@ -19,11 +19,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+# The service layer. Kept optional so a CLI-only install stays small: the
+# parser core has no use for a web framework.
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27",
+    # qpdf bindings: split, rotate, merge, decrypt and repair in-process.
+    # This is what replaces a 1-2GB Java PDF service on a memory-tight NAS.
+    "pikepdf>=9.0",
+]
 paddle = ["paddleocr>=2.7", "paddlepaddle>=2.6"]
 
 [project.scripts]
 statementbridge = "statementbridge.cli:main"
+statementbridge-worker = "statementbridge.worker.loop:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

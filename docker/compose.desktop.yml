@@ -1,0 +1,81 @@
+# The desktop tier — optional, and not required for the system to work.
+#
+# Two separate things live here, and they are separate on purpose:
+#
+# 1. An extra `worker`. The NAS runs OCR perfectly well at a few minutes per
+#    statement, which is why the recommended deployment is a single machine. But
+#    the Ryzen 9 is roughly three times quicker per core, so if a clerk is
+#    waiting on a sixty-page statement it is worth having. Start this, stop the
+#    NAS workers, and jobs are recognised here instead. Nothing in the code
+#    knows the difference: the worker holds no database connection, it claims
+#    and reports over HTTP, so the only thing that changes is SB_API_URL.
+#
+#    When this machine is off, jobs simply queue on the NAS as before.
+#
+# 2. Stirling-PDF, for the office's own PDF work — merging client packs,
+#    rotating a badly-fed scan, splitting a combined statement before upload.
+#    That is a person using a tool, not part of this pipeline: StatementBridge
+#    does its own PDF manipulation in-process with pikepdf, which covers split,
+#    rotate, merge, decrypt and repair without a JVM.
+#
+#    It is deliberately NOT in the NAS stack. Spring Boot wants 1-2GB, and on a
+#    box where each OCR worker peaks around a gigabyte that is a worker's worth
+#    of memory spent on a service the pipeline never calls. Also note the
+#    ultra-lite image drops `repair` (ENDPOINTS_GROUPS_TO_REMOVE=CLI puts it out
+#    of reach), so it would not have covered the named operations anyway.
+#
+# Usage, on the desktop:
+#   SB_API_URL=http://<nas-ip>:8000 docker compose -f compose.desktop.yml up -d
+
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: statementbridge:latest
+    restart: unless-stopped
+    command: ["statementbridge-worker"]
+    environment:
+      SB_DATA_DIR: /data
+      SB_WORKER_TOKEN: ${SB_WORKER_TOKEN:?set this in .env}
+      # Must point at the NAS. There is no API on this machine.
+      SB_API_URL: ${SB_API_URL:?set to the NAS, e.g. http://192.168.1.10:8000}
+    volumes:
+      # The same client files the NAS holds, over the LAN. The worker reads the
+      # source PDF by path, so this must resolve to the same share.
+      - ${SB_ARCHIVE_MOUNT:?mount the NAS statements share here}:/data/uploads
+      - ${SB_SCRATCH_DIR:-./scratch}:/data/scratch
+    deploy:
+      # Twelve cores and no DSM to share them with, so this can be less shy than
+      # the NAS. Each replica still peaks around a gigabyte.
+      replicas: ${SB_WORKER_REPLICAS:-4}
+    networks: [statementbridge]
+
+  # Optional. Comment out if the office does not want it.
+  stirling-pdf:
+    image: stirlingtools/stirling-pdf:latest-ultra-lite
+    container_name: stirling-pdf
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      DISABLE_ADDITIONAL_FEATURES: "true"
+      SECURITY_ENABLELOGIN: "false"
+      SYSTEM_DEFAULTLOCALE: en-GB
+      UI_APPNAME: PDF Tools
+      # Client bank statements pass through this. It must not phone home.
+      SYSTEM_GOOGLEVISIBILITY: "false"
+      METRICS_ENABLED: "false"
+    volumes:
+      - ${SB_STIRLING_CONFIG:-./stirling/config}:/configs:rw
+    deploy:
+      resources:
+        limits:
+          # Upstream's own cap for this image. Fine on a desktop; it is exactly
+          # what makes it unwelcome on the NAS.
+          memory: 2G
+    networks: [statementbridge]
+
+networks:
+  statementbridge:
+    driver: bridge
