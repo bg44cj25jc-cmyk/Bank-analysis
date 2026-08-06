@@ -144,7 +144,7 @@ def test_the_ledgers_actually_used_are_reported_once_each():
     summary = summary_for(rows)
     assert len(summary.ledgers) == len(set(summary.ledgers))
     assert "Cash A/c (Contra)" in summary.ledgers
-    assert "MR. AJOY NAG - Own Accounts (Contra)" in summary.ledgers
+    assert "Ajoy Nag - Own Accounts (Contra)" in summary.ledgers
 
 
 def test_money_leaves_the_summary_as_text_never_as_a_json_number():

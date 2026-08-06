@@ -100,7 +100,8 @@ def test_a_self_transfer_is_flagged_for_confirmation_not_merely_labelled():
     decision = decide("UPI/DR/AJOY NAG/PUNB", DEBIT, "MR. AJOY NAG")
     assert decision.contra
     assert decision.needs_review
-    assert decision.ledger == "MR. AJOY NAG - Own Accounts (Contra)"
+    # The header shouts a title; the ledger the firm keeps does neither.
+    assert decision.ledger == "Ajoy Nag - Own Accounts (Contra)"
 
 
 def test_a_reversal_outranks_the_rail_so_it_is_not_counted_as_turnover():

@@ -13,7 +13,12 @@ from decimal import Decimal
 
 import pytest
 
-from statementbridge.rules.normalise import canon_word, name_words, narration
+from statementbridge.rules.normalise import (
+    canon_word,
+    display_name,
+    name_words,
+    narration,
+)
 from statementbridge.rules.rule import Context, Pack, Rule, build
 from statementbridge.rules.taxonomy import Category, Direction
 
@@ -125,6 +130,21 @@ def test_ocr_damage_and_clean_text_reduce_to_the_same_words():
     """``canon``'s glyph table is what makes the match exact, not merely close."""
     assert narration("GST").words == narration("G5T").words
     assert narration("UPI").words == narration("UP1").words
+
+
+def test_a_ledger_uses_the_holders_name_not_the_headers_shouting():
+    """``MR. AJOY NAG`` on the statement; ``Ajoy Nag`` in the firm's ledger."""
+    assert display_name("MR. AJOY NAG") == "Ajoy Nag"
+    assert display_name("M/S SUHAGKUTI TRADERS") == "Suhagkuti Traders"
+    assert display_name("  Smt. Rina Das  ") == "Rina Das"
+
+
+def test_a_name_already_cased_deliberately_is_left_alone():
+    """Retyping ``ABC Enterprises Pvt Ltd`` would be a change, not a fix."""
+    assert display_name("ABC Enterprises Pvt Ltd") == "ABC Enterprises Pvt Ltd"
+    assert display_name("Ajoy Nag") == "Ajoy Nag"
+    assert display_name(None) == ""
+    assert display_name("   ") == ""
 
 
 def test_honorifics_and_initials_are_not_part_of_a_name():

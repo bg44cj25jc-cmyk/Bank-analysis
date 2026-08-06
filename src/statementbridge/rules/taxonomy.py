@@ -40,6 +40,8 @@ from decimal import Decimal
 from enum import Enum
 from typing import Final
 
+from .normalise import display_name
+
 
 class Direction(str, Enum):
     """Which way money moved, under the pipeline's signed convention."""
@@ -141,7 +143,9 @@ class CategorySpec:
             return self.ledger_template
         # An unconfirmed holder must read as unknown. Dropping the name silently
         # would produce " - Own Accounts (Contra)", which looks like a ledger.
-        return self.ledger_template.format(holder=(holder or "Account Holder").strip())
+        return self.ledger_template.format(
+            holder=display_name(holder) or "Account Holder"
+        )
 
 
 #: Descriptions are verbatim from the workbook's ``Category Summary`` sheet.
