@@ -48,7 +48,12 @@ class RowKind(str, Enum):
 #: Glyphs that low-DPI and dot-matrix OCR interchange, collapsed onto a single
 #: representative so both the observed text and the reference pattern land on
 #: the same canonical string.
-_CANON_MAP: Final[dict[str, str]] = {
+#:
+#: Public because :mod:`statementbridge.rules.normalise` matches narrations in
+#: the same space. Two copies of this table would drift apart, and the one that
+#: drifted would fail silently -- a rule that simply stops matching looks
+#: exactly like a transaction that was never there.
+CANON_MAP: Final[dict[str, str]] = {
     "0": "o", "1": "l", "i": "l", "|": "l", "!": "l",
     "2": "z", "5": "s", "6": "g", "9": "g", "q": "g",
     "8": "b",
@@ -67,7 +72,7 @@ _FUZZY_THRESHOLD: Final[int] = 88
 def canon(text: str) -> str:
     """Reduce a line to the alphabet-only form used for trap matching."""
     lowered = text.lower()
-    mapped = "".join(_CANON_MAP.get(char, char) for char in lowered)
+    mapped = "".join(CANON_MAP.get(char, char) for char in lowered)
     return _NON_ALPHA.sub("", mapped)
 
 
