@@ -16,6 +16,9 @@ import pytest
 
 GRAMIN = "fixture_gramin_cc_scanned.pdf.pdf"
 SBI = "fixture_sbi_current_clean.pdf.pdf"
+#: The client's finished migration workbook. Not a statement: 236 rows a person
+#: categorised by hand, which is the only labelled data the rules engine has.
+TALLY_WORKBOOK = "Ajoy Nag FY2025-26 Tally.xlsx"
 
 #: Searched in order. SB_FIXTURE_DIR wins, then a sibling checkout.
 CANDIDATES = (
@@ -52,6 +55,13 @@ def sbi_pdf(fixture_dir) -> Path:
     if fixture_dir is None or not (fixture_dir / SBI).exists():
         pytest.skip("SBI fixture not available (set SB_FIXTURE_DIR)")
     return fixture_dir / SBI
+
+
+@pytest.fixture(scope="session")
+def tally_workbook(fixture_dir) -> Path:
+    if fixture_dir is None or not (fixture_dir / TALLY_WORKBOOK).exists():
+        pytest.skip("client Tally workbook not available (set SB_FIXTURE_DIR)")
+    return fixture_dir / TALLY_WORKBOOK
 
 
 @pytest.fixture(scope="session")

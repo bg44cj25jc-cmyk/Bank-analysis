@@ -40,6 +40,8 @@ from decimal import Decimal
 from enum import Enum
 from typing import Final
 
+from .normalise import display_name
+
 
 class Direction(str, Enum):
     """Which way money moved, under the pipeline's signed convention."""
@@ -103,6 +105,9 @@ class Category(str, Enum):
     TERM_DEPOSIT = "Z"
     NEFT_IN = "NEFT_IN"
     NEFT_OUT = "NEFT_OUT"
+    #: Ours, not the workbook's. See the note above ``_SPECS``.
+    RTGS_IN = "RTGS_IN"
+    RTGS_OUT = "RTGS_OUT"
     IMPS_IN = "IMPS_IN"
     IMPS_OUT = "IMPS_OUT"
     UNCLASSIFIED = "UNCL"
@@ -141,7 +146,9 @@ class CategorySpec:
             return self.ledger_template
         # An unconfirmed holder must read as unknown. Dropping the name silently
         # would produce " - Own Accounts (Contra)", which looks like a ledger.
-        return self.ledger_template.format(holder=(holder or "Account Holder").strip())
+        return self.ledger_template.format(
+            holder=display_name(holder) or "Account Holder"
+        )
 
 
 #: Descriptions are verbatim from the workbook's ``Category Summary`` sheet.
@@ -149,6 +156,14 @@ class CategorySpec:
 #: rest follow its Notes item 8 ("Bank Charges->Indirect Exp; Interest
 #: Received->Indirect Inc; Loan Drawdown->Loans(Liability); Self/Cash->Contra;
 #: UPI/NEFT/IMPS 3rd-party->Sundry Dr/Cr or Sales/Purchase").
+#:
+#: **``RTGS_IN`` and ``RTGS_OUT`` are ours.** The workbook's sheet has 33 rows
+#: and this has 35, which is a visible difference and deliberately so. The
+#: client's account was a savings account that never used the rail; a current
+#: account uses it constantly, and the only code near enough to reuse says NEFT.
+#: Labelling a wire transfer as a different rail to keep the sheets identical
+#: would have bought that tidiness with a quiet error in the one field the
+#: category exists to state.
 _SPECS: Final[dict[Category, CategorySpec]] = {
     Category.OPENING_ADJUSTMENT: CategorySpec(
         "Opening Balance Adjustment", "Opening Balance Adjustment (Suspense - verify)"
@@ -244,6 +259,12 @@ _SPECS: Final[dict[Category, CategorySpec]] = {
     ),
     Category.NEFT_OUT: CategorySpec(
         "NEFT Outward (3rd party)", "Sundry Payments - NEFT", direction=Direction.DEBIT
+    ),
+    Category.RTGS_IN: CategorySpec(
+        "RTGS Inward (3rd party)", "Sundry Receipts - RTGS", direction=Direction.CREDIT
+    ),
+    Category.RTGS_OUT: CategorySpec(
+        "RTGS Outward (3rd party)", "Sundry Payments - RTGS", direction=Direction.DEBIT
     ),
     Category.IMPS_IN: CategorySpec(
         "IMPS Inward (3rd party)", "Sundry Receipts - IMPS", direction=Direction.CREDIT

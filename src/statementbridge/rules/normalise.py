@@ -131,6 +131,28 @@ _HONORIFICS: Final[frozenset[str]] = frozenset(
 )
 
 
+#: A leading title, as a header actually prints one. Matched on the raw string
+#: rather than on tokens because ``M/S`` splits into two single letters.
+_HONORIFIC_PREFIX: Final[re.Pattern[str]] = re.compile(
+    r"^\s*(m/s|messrs|mrs|mr|ms|miss|shri|smt|sri|dr)\.?\s+", re.IGNORECASE
+)
+
+
+def display_name(holder: str | None) -> str:
+    """A holder's name as it should read on a ledger, not as the header shouts it.
+
+    A header gives ``MR. AJOY NAG``; the ledger the firm actually keeps is
+    ``Ajoy Nag - Own Accounts``. The title is dropped and an all-capitals name is
+    title-cased -- but only an all-capitals one, because a name that already
+    carries deliberate casing (``ABC Enterprises Pvt Ltd``) is better left alone
+    than retyped.
+    """
+    if not holder or not holder.strip():
+        return ""
+    cleaned = _HONORIFIC_PREFIX.sub("", holder.strip(), count=1).strip()
+    return cleaned.title() if cleaned.isupper() else cleaned
+
+
 def name_words(holder: str | None) -> tuple[str, ...]:
     """The canonical words of an account holder's name, honorifics removed.
 

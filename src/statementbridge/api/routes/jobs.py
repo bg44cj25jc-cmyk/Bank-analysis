@@ -87,6 +87,7 @@ def detail_out(job) -> JobDetail:
         **summary_out(job).model_dump(),
         quality=QualityReport(**job.quality) if job.quality else None,
         chain=job.chain,
+        categories=job.categories,
         blocks_export=job.blocks_export,
     )
 
@@ -242,6 +243,23 @@ def extracted_rows(
     _load(connection, job_id)
     items, total = jobs.rows(connection, job_id, limit=limit, offset=offset)
     return RowPage(items=items, total=total)
+
+
+@router.get("/jobs/{job_id}/categories")
+def categories(connection: ConnectionDep, job_id: str) -> dict:
+    """The category summary: what the statement was, rather than what it totalled.
+
+    404 rather than an empty summary when the job has not been parsed. A
+    statement with nothing in any category and a statement nobody has read yet
+    look identical in JSON, and only one of them is a reason to do anything.
+    """
+    job = _load(connection, job_id)
+    if job.categories is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"job is {job.state.value}; no categories until it has been parsed",
+        )
+    return job.categories
 
 
 @router.get("/jobs/{job_id}/audit", response_model=list[AuditEntryOut])

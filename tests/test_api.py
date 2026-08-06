@@ -233,6 +233,118 @@ def test_the_worker_reports_progress_and_results(client, tmp_path):
     assert client.get(f"/api/v1/jobs/{job_id}/rows").json()["total"] == 1
 
 
+def test_the_confirmed_holder_reaches_the_worker(client, tmp_path):
+    """Self-transfer detection is a name match, and the worker has no database.
+
+    So the holder has to travel with the claim, or every transfer between the
+    client's own accounts is classified as a payment to a stranger.
+    """
+    job_id = upload(client, write_image_pdf(tmp_path / "s.pdf", dpi=300)).json()["job"]["id"]
+    client.post("/internal/jobs/claim", json={"worker": "w"}, headers=WORKER)
+    client.post(
+        f"/internal/jobs/{job_id}/header", json={"profile_key": "gramin_cc"}, headers=WORKER
+    )
+    client.post(
+        f"/api/v1/jobs/{job_id}/header",
+        json={"profile_key": "gramin_cc", "holder": "MR. AJOY NAG"},
+    )
+
+    claimed = client.post("/internal/jobs/claim", json={"worker": "w"}, headers=WORKER)
+    assert claimed.json()["holder"] == "MR. AJOY NAG"
+
+
+def test_the_category_summary_survives_the_round_trip(client, tmp_path):
+    job_id = upload(client, write_image_pdf(tmp_path / "s.pdf", dpi=300)).json()["job"]["id"]
+    client.post("/internal/jobs/claim", json={"worker": "w"}, headers=WORKER)
+    client.post(
+        f"/internal/jobs/{job_id}/header", json={"profile_key": "gramin_cc"}, headers=WORKER
+    )
+    client.post(f"/api/v1/jobs/{job_id}/header", json={"profile_key": "gramin_cc"})
+    client.post("/internal/jobs/claim", json={"worker": "w"}, headers=WORKER)
+
+    summary = {
+        "categories": [
+            {"code": "T1", "description": "UPI Received (3rd party)", "contra": False,
+             "count": 1, "credit": "15400.00", "debit": "0.00"},
+        ],
+        "count": 1, "total_credit": "15400.00", "total_debit": "0.00",
+        "unclassified": 0, "review_count": 0, "contra_count": 0,
+        "ledgers": ["Sundry Receipts / Debtors"],
+    }
+    client.post(
+        f"/internal/jobs/{job_id}/result",
+        json={
+            "rows": [{"narration": "UPI/CR/RAMESH/YBL", "credit": "15400.00",
+                      "category": "T1", "tally_ledger": "Sundry Receipts / Debtors"}],
+            "chain": {"opening": "0.00"},
+            "page_count": 1, "unresolved": 0, "reconciled": True, "variance": "0.00",
+            "categories": summary,
+        },
+        headers=WORKER,
+    )
+
+    response = client.get(f"/api/v1/jobs/{job_id}/categories")
+    assert response.status_code == 200
+    assert response.json() == summary
+    assert client.get(f"/api/v1/jobs/{job_id}").json()["categories"]["count"] == 1
+    # The per-row decision comes back with the row, needing no route of its own.
+    assert client.get(f"/api/v1/jobs/{job_id}/rows").json()["items"][0]["category"] == "T1"
+
+
+def test_the_summarys_money_is_text_on_the_wire_too(client, tmp_path):
+    """Read off the raw body: once it is parsed the evidence is gone."""
+    job_id = upload(client, write_image_pdf(tmp_path / "s.pdf", dpi=300)).json()["job"]["id"]
+    client.post("/internal/jobs/claim", json={"worker": "w"}, headers=WORKER)
+    client.post(
+        f"/internal/jobs/{job_id}/header", json={"profile_key": "gramin_cc"}, headers=WORKER
+    )
+    client.post(f"/api/v1/jobs/{job_id}/header", json={"profile_key": "gramin_cc"})
+    client.post("/internal/jobs/claim", json={"worker": "w"}, headers=WORKER)
+    client.post(
+        f"/internal/jobs/{job_id}/result",
+        json={
+            "rows": [], "chain": {}, "page_count": 1, "unresolved": 0,
+            "reconciled": True, "variance": "0.00",
+            "categories": {"count": 0, "total_credit": "3240.72",
+                           "total_debit": "0.00", "categories": []},
+        },
+        headers=WORKER,
+    )
+
+    body = client.get(f"/api/v1/jobs/{job_id}/categories").text
+    assert '"3240.72"' in body
+    assert "3240.7199" not in body
+
+
+def test_categories_are_404_before_the_statement_has_been_parsed(client, tmp_path):
+    """A statement nobody has read and one with nothing in it are different."""
+    job_id = upload(client, write_image_pdf(tmp_path / "s.pdf", dpi=300)).json()["job"]["id"]
+    assert client.get(f"/api/v1/jobs/{job_id}/categories").status_code == 404
+
+
+def test_a_worker_that_reports_no_categories_still_succeeds(client, tmp_path):
+    """The field is optional so an older worker keeps working after an upgrade."""
+    job_id = upload(client, write_image_pdf(tmp_path / "s.pdf", dpi=300)).json()["job"]["id"]
+    client.post("/internal/jobs/claim", json={"worker": "w"}, headers=WORKER)
+    client.post(
+        f"/internal/jobs/{job_id}/header", json={"profile_key": "gramin_cc"}, headers=WORKER
+    )
+    client.post(f"/api/v1/jobs/{job_id}/header", json={"profile_key": "gramin_cc"})
+    client.post("/internal/jobs/claim", json={"worker": "w"}, headers=WORKER)
+
+    response = client.post(
+        f"/internal/jobs/{job_id}/result",
+        json={
+            "rows": [], "chain": {}, "page_count": 1, "unresolved": 0,
+            "reconciled": True, "variance": "0.00",
+        },
+        headers=WORKER,
+    )
+    assert response.status_code == 204
+    assert client.get(f"/api/v1/jobs/{job_id}").json()["state"] == "PARSED"
+    assert client.get(f"/api/v1/jobs/{job_id}/categories").status_code == 404
+
+
 def test_a_tie_with_unresolved_rows_still_blocks_export(client, tmp_path):
     """Arithmetic alone is not enough, and the API must not imply that it is.
 

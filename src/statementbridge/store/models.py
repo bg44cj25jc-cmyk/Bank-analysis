@@ -99,6 +99,8 @@ class Job:
     unresolved: int | None = None
     reconciled: bool | None = None
     chain: dict[str, Any] | None = None
+    #: The rules engine's category summary, or None if the job predates it.
+    categories: dict[str, Any] | None = None
     error: str | None = None
 
     claimed_at: str | None = None

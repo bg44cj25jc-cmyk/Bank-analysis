@@ -6,10 +6,15 @@ boundary: whatever comes out of either family is a list of :class:`Txn`, and
 every stage downstream -- balance repair, categorisation, reconciliation,
 export -- is written against that and nothing else.
 
-Beyond the nine columns in the original specification each row also carries
-provenance: the raw text the numbers came from, an OCR confidence, a row state
-and a repair note. Those are what make a correction auditable when a partner
-has to explain a figure to a client, and what the review screen sorts on.
+Beyond the nine columns in the original specification each row also carries its
+accounting decision -- category, Tally ledger, contra flag -- and its provenance:
+the raw text the numbers came from, an OCR confidence, a row state and a repair
+note. Those are what make a correction auditable when a partner has to explain a
+figure to a client, and what the review screen sorts on.
+
+The classification columns sit between the two, because they are what the row is
+*for*: the nine contract columns say what the bank printed, the classification
+says what it means, and the provenance says how much to trust either.
 """
 
 from __future__ import annotations
@@ -18,11 +23,16 @@ from dataclasses import dataclass, field, asdict
 from datetime import date
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import pandas as pd
 
 from ..money import ZERO, q2
+
+if TYPE_CHECKING:  # imported for typing only: ``rules`` imports ``parse``, so a
+    # runtime import here would close the loop.
+    from ..rules.engine import Classification
+    from ..rules.taxonomy import Category
 
 
 class RowState(str, Enum):
@@ -49,6 +59,11 @@ FRAME_COLUMNS: tuple[str, ...] = (
     "balance",
     "page_no",
     "source_row",
+    "category",
+    "tally_ledger",
+    "contra",
+    "rule_id",
+    "needs_review",
     "raw_amount_text",
     "raw_balance_text",
     "ocr_confidence",
@@ -78,6 +93,16 @@ class Txn:
     debit: Decimal = ZERO
     credit: Decimal = ZERO
     balance: Decimal | None = None
+
+    # --- the accounting decision ----------------------------------------
+    #: Set by :mod:`statementbridge.rules.engine`. ``None`` means the rules have
+    #: not been run over this row, which is not the same as their having run and
+    #: found nothing -- that is ``Category.UNCLASSIFIED``.
+    category: "Category | None" = None
+    tally_ledger: str = ""
+    contra: bool = False
+    rule_id: str | None = None
+    needs_review: bool = False
 
     # --- provenance -----------------------------------------------------
     raw_amount_text: str = ""
@@ -119,9 +144,25 @@ class Txn:
     def note(self, message: str) -> None:
         self.repair_note = f"{self.repair_note}; {message}" if self.repair_note else message
 
+    def apply(self, classification: "Classification") -> None:
+        """Record what the rules engine decided about this row.
+
+        The one place a decision becomes a row, so the CLI, the worker and
+        anything added later cannot drift apart on how that is done.
+        """
+        self.category = classification.category
+        self.tally_ledger = classification.ledger
+        self.contra = classification.contra
+        self.rule_id = classification.rule_id
+        self.needs_review = classification.needs_review
+
     def as_record(self) -> dict[str, Any]:
         record = asdict(self)
         record["row_state"] = self.row_state.value
+        # Both are str enums, so they would serialise correctly by accident.
+        # Doing it explicitly means the record carries the code the firm reads
+        # rather than whatever repr the next consumer happens to apply.
+        record["category"] = self.category.value if self.category else None
         return {column: record.get(column) for column in FRAME_COLUMNS}
 
 

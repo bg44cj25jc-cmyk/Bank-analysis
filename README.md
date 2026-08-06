@@ -3,8 +3,9 @@
 Converts Indian bank statement PDFs into Tally-ready output for one financial
 year. Offline by default: nothing leaves the machine.
 
-Built for SuhagKuti Tax & Legal Services. **Parser core plus the service
-layer: CLI, HTTP API and a worker queue.**
+Built for SuhagKuti Tax & Legal Services. **Parser core, the service layer —
+CLI, HTTP API and a worker queue — and the rules engine that turns a narration
+into an accounting decision.**
 
 ## Status
 
@@ -12,6 +13,9 @@ Phase 1 is built and does not yet meet its acceptance bar. The extraction path
 runs end to end on both sample statements, and the balance engine is complete
 and tested, but the fixtures do not reconcile. The cause is measured and is not
 a software defect — see [Why the fixtures do not reconcile](#why-the-fixtures-do-not-reconcile).
+
+[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) is the fuller picture: the phase
+roadmap, what each step delivered, and what phase 5 needs from here.
 
 | Component | State |
 |---|---|
@@ -24,7 +28,8 @@ a software defect — see [Why the fixtures do not reconcile](#why-the-fixtures-
 | Upload capture-quality gate and scanning SOP | done |
 | Per-page routing between the two parser families | done |
 | FastAPI service, job queue and worker | done |
-| Rules engine, Excel, GUI, Tally XML, Ollama | not started (Phases 4–8) |
+| Rules engine: categories, Tally ledgers, contra, category summary | done |
+| Excel, GUI, Tally XML, Ollama | not started (Phases 5–8) |
 
 ## Install
 
@@ -41,8 +46,10 @@ statementbridge quality     <pdf>                     # is this scan worth proce
 statementbridge classify    <pdf>                     # text layer or scan?
 statementbridge audit       <pdf> --profile gramin_cc --expect
 statementbridge parse       <pdf> --profile sbi_current --out rows.csv
+statementbridge categorise  <pdf> --profile gramin_cc --holder "AJOY NAG"
 statementbridge ocr-bakeoff <pdf> --profile gramin_cc --first 1 --last 3
 statementbridge profiles
+statementbridge categories
 ```
 
 `quality` grades the capture before anything expensive happens, and names the
@@ -123,6 +130,16 @@ Every repair must be reachable by a known glyph confusion, one dropped digit,
 or a misread decimal point. Anything else goes to a human. An unresolved row
 contains its own damage, so one real fault cannot manufacture a second
 downstream.
+
+**A narration is turned into a posting, or into a question.** Every settled row
+gets a category, a Tally ledger, a contra flag and the id of the rule that
+decided it. Rules are data and ordered specific-to-general, with the payment
+rails last: a rail says how money moved and almost nothing about what it was
+for. Nothing matched means `UNCLASSIFIED` and a suspense ledger, never a nearby
+guess — an unclassified row is read once by a person, while a row confidently
+posted to the wrong ledger is never questioned again. The resulting category
+summary must tie to the balance chain to the paisa. See
+[docs/RULES.md](docs/RULES.md).
 
 **Export needs more than a tie.** A dropped row leaves the closing balance
 untouched — its effect is absorbed into the neighbouring row's delta — so the
@@ -237,6 +254,16 @@ Fixtures live in the `Ba-resources` repository and are located automatically
 from a sibling checkout, or via `SB_FIXTURE_DIR`. Tests skip cleanly when they
 are absent.
 
-The regression tests **pin current behaviour rather than assert the acceptance
-bar**, since the bar is not met. Their thresholds are floors to defend against
-regression, not targets that have been hit. Raise them when rescans arrive.
+The extraction regression tests **pin current behaviour rather than assert the
+acceptance bar**, since the bar is not met. Their thresholds are floors to defend
+against regression, not targets that have been hit. Raise them when rescans
+arrive.
+
+The rules-engine regression is the opposite and deliberately so. It replays the
+236 rows of the client's migration workbook that a person categorised by hand,
+and asserts **exact** agreement — 236/236 on category, Tally ledger and contra
+alike. Nothing on that path touches a recogniser, so the same input gives the
+same answer on every machine, and a floor would only hide the day a rule change
+silently reclassified a row. What it does not prove is scope: that corpus
+exercises ten of the thirty-five categories, and a second labelled statement
+would be worth more than any further work on this one.

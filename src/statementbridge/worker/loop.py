@@ -30,6 +30,8 @@ from ..config import Settings, load
 from ..parse import route
 from ..parse.profiles import gramin_cc, sbi_current  # noqa: F401  (registers profiles)
 from ..parse.profiles.base import get_profile
+from ..rules.engine import classify, movements
+from ..rules.summary import summarise
 from ..store.jobs import record_of
 from . import header
 from .client import ApiClient, ClaimedJob
@@ -108,10 +110,20 @@ class Worker:
         closing = Decimal(job.closing) if job.closing else None
         chain, _ = settle(result.rows, opening, closing=closing)
 
+        # Classification runs here because this is where the rows are, and it
+        # costs nothing next to the OCR that produced them. The holder came
+        # down with the job: self-transfer detection is a name match, and there
+        # is no database on this side to look the name up in.
+        decisions = classify(result.rows, holder=job.holder)
+        for row, decision in zip(result.rows, decisions):
+            row.apply(decision)
+        categories = summarise(movements(result.rows, decisions))
+
         self.client.result(
             job.id,
             {
                 "rows": [record_of(row) for row in result.rows],
+                "categories": categories.as_dict(),
                 "chain": {
                     "opening": str(chain.opening),
                     "closing_computed": str(chain.closing_computed),

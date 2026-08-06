@@ -63,6 +63,7 @@ def claim(
         profile_key=job.profile_key,
         opening=job.opening,
         closing=job.closing,
+        holder=job.holder,
     )
 
 
@@ -110,6 +111,7 @@ def parsed(connection: ConnectionDep, job_id: str, result: ParseResultIn) -> Non
         page_count=result.page_count, row_count=len(result.rows),
         unresolved=result.unresolved, reconciled=result.reconciled,
         variance=result.variance, chain_json=result.chain,
+        categories_json=result.categories,
         claimed_at=None, claimed_by=None, error=None,
     )
 
